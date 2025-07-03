@@ -288,7 +288,6 @@ async function checkActivePatrols() {
 setInterval(checkActivePatrols, 30 * 1000); // každých 30 sekund
 
 // ==== INTERAKCE ==== //
-
 client.on(Events.InteractionCreate, async interaction => {
   // Ošetření Unknown interaction error (uživatelská zpráva)
   async function safeReplyOrUpdate(fn) {
@@ -307,6 +306,26 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     }
   }
+
+  // Bezpečné showModal (zabrání pádu na Unknown interaction)
+  async function safeShowModal(modal) {
+    try {
+      if (interaction.replied || interaction.deferred) return;
+      await interaction.showModal(modal);
+    } catch (err) {
+      if (err?.rawError?.code === 10062 || err?.code === 10062 || (err?.message && err.message.includes('Unknown interaction'))) {
+        try {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', ephemeral: true });
+          }
+        } catch {}
+      } else {
+        console.error('Chyba při showModal:', err);
+      }
+    }
+  }
+  // END SAFE HELPERS
+
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'patrola') {
       const embed = new EmbedBuilder()
@@ -721,7 +740,7 @@ client.on(Events.InteractionCreate, async interaction => {
       new ActionRowBuilder().addComponents(availabilityInput)
     );
 
-    await interaction.showModal(modal);
+    await safeShowModal(modal);
     return;
   }
 
@@ -845,7 +864,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new ActionRowBuilder().addComponents(reasonInput)
       );
 
-      await interaction.showModal(modal);
+      await safeShowModal(modal);
 
       // Ulož info o žádosti pro modal
       req._modalUser = interaction.user.id;
@@ -883,7 +902,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new ActionRowBuilder().addComponents(passedInput)
       );
 
-      await interaction.showModal(modal);
+      await safeShowModal(modal);
 
       // Ulož info o žádosti pro modal
       req._modalUser = interaction.user.id;
