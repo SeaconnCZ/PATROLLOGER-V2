@@ -955,7 +955,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const feedback = interaction.fields.getTextInputValue('feedback');
     const passedRaw = interaction.fields.getTextInputValue('passed');
-    const passed = /^ano$/i.test(passedRaw.trim());
+    // Uzná "ano", "prošel", s diakritikou, tečkou, čárkou, atd.
+    const passed = /^(ano|prosel|prošel)/i.test(
+      passedRaw.trim()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // odstraní diakritiku
+        .replace(/[^a-zA-Z]/g, '') // odstraní speciální znaky
+    );
 
     req.status = 'done';
     req.feedback = feedback;
