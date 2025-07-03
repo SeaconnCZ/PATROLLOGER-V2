@@ -473,25 +473,196 @@ function createRedatButtons({ claimedBy, status }) {
 
 // ==== INTERAKCE ==== //
 client.on(Events.InteractionCreate, async interaction => {
-  // --- REDAT SLASH COMMAND ---
-  if (interaction.isChatInputCommand() && interaction.commandName === 'redat') {
-    // MODAL na dostupnost
-    const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-    const modal = new ModalBuilder()
-      .setCustomId('redat_availability_modal')
-      .setTitle('Žádost o REDAT');
 
-    const availabilityInput = new TextInputBuilder()
-      .setCustomId('availability')
-      .setLabel('Dostupnost (např. 3.7 20:00-22:00)')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+  // --- SLASH COMMANDS ---
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'patrola') {
+      const embed = new EmbedBuilder()
+        .setColor(0x3498DB)
+        .setTitle('🚓 Patrola')
+        .setThumbnail(commandThumbnail)
+        .setDescription([
+          '**Zahaj svoji patrolu kliknutím na tlačítko níže.**',
+          '',
+          '➡️ Klikni na **🟢 Zahájit Patrolu** pro zahájení hlídky.',
+          '⬅️ Klikni na **🔴 Ukončit Patrolu** pro její ukončení.',
+          '',
+          '> 💤 Patrola bude **automaticky ukončena**, pokud tvůj stav na aplikaci bude offline.'
+        ].join('\n'))
+        .setFooter({ text: 'LSPD Patrol System', iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(availabilityInput)
-    );
+      const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('start_patrol')
+          .setLabel('🟢 Zahájit Patrolu')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('stop_patrol')
+          .setLabel('🔴 Ukončit Patrolu')
+          .setStyle(ButtonStyle.Danger)
+      );
 
-    await safeShowModal(interaction, modal);
+      await safeReplyOrUpdate(interaction, () => interaction.reply({ embeds: [embed], components: [buttons] }));
+    }
+    else if (interaction.commandName === 'souhrn') {
+      const member = interaction.member;
+      if (!canUseSummary(member)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', flags: 64 }));
+      }
+
+      if (patrolSummary.size === 0) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '📊 Žádná data o patrolách nejsou k dispozici.', flags: 64 }));
+      }
+
+      // Spočítáme celkový čas podle směn
+      const totalByShift = new Map();
+      for (const [shift, users] of patrolSummary.entries()) {
+        let shiftTotal = 0;
+        for (const data of users.values()) {
+          shiftTotal += data.duration;
+        }
+        totalByShift.set(shift, shiftTotal);
+      }
+
+      // Najdeme nejlepší směnu (nejvyšší odsloužený čas)
+      const bestShiftEntry = [...totalByShift.entries()].reduce((a, b) => (a[1] > b[1] ? a : b));
+      const bestShift = bestShiftEntry[0];
+
+      // Najdeme nejlepšího uživatele celkově (napříč směnami)
+      const totalByUser = new Map();
+      for (const users of patrolSummary.values()) {
+        for (const [userId, data] of users.entries()) {
+          totalByUser.set(userId, (totalByUser.get(userId) || 0) + data.duration);
+        }
+      }
+      const bestUserEntry = [...totalByUser.entries()].reduce((a, b) => (a[1] > b[1] ? a : b));
+      const bestUserId = bestUserEntry[0];
+      const bestUserDuration = bestUserEntry[1];
+
+      // Barvy podle směn (můžeš upravit)
+      const shiftColors = {
+        '1': 0x1abc9c, // tyrkysová
+        '2': 0x3498db, // modrá
+        '3': 0x9b59b6, // fialová
+        '4': 0xe67e22, // oranžová
+        '5': 0xe74c3c, // červená
+      };
+
+      const lines = [];
+
+      const sortedShifts = [...patrolSummary.keys()]
+        .sort((a, b) => parseInt(a) - parseInt(b));
+
+      for (const shift of sortedShifts) {
+        const users = patrolSummary.get(shift);
+        const shiftTotalTime = totalByShift.get(shift);
+        const shiftColor = shiftColors[shift] || 0x95a5a6; // šedá pokud neznámá
+
+        // Zvýraznění nejlepší směny
+        const shiftTitle = shift === bestShift ? `🌟 Směna ${shift} (nejaktivnější)` : `Směna ${shift}`;
+
+        lines.push(`\n__**${shiftTitle} — Celkem: ${formatDuration(shiftTotalTime)}**__`);
+
+        const sortedUsers = [...users.entries()]
+          .sort((a, b) => b[1].duration - a[1].duration);
+
+        for (const [userId, data] of sortedUsers) {
+          const timeStr = formatDuration(data.duration);
+          const isBestUser = userId === bestUserId;
+          // Zvýraznění nejlepšího člověka (tučně + emoji)
+          lines.push(`${isBestUser ? '🌟 **' : ''}👮 <@${userId}> | ${data.rank} — ⏱️ ${timeStr}${isBestUser ? '**' : ''}`);
+        }
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('📊 Týdenní souhrn')
+        .setDescription(lines.join('\n'))
+        .setColor(0x2ecc71) // zelená základní barva
+        .setFooter({ text: `Nejaktivnější officer: <@${bestUserId}> — ${formatDuration(bestUserDuration)}` })
+        .setTimestamp();
+
+      await safeReplyOrUpdate(interaction, () => interaction.reply({ embeds: [embed] }));
+    }
+    else if (interaction.commandName === 'clear') {
+      const member = interaction.member;
+      if (!isChief(member)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Pouze Chief of Police může čistit data.', flags: 64 }));
+      }
+
+      patrolSummary.clear();
+      saveSummary();
+
+      return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '🗑️ Všechna data o patrolách byla úspěšně vymazána.', flags: 64 }));
+    }
+    else if (interaction.commandName === 'aktivni') {
+      const member = interaction.member;
+      if (!canUseActiveList(member)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', flags: 64 }));
+      }
+
+      if (patrolTimers.size === 0) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '📋 Nikdo momentálně neprobíhá patrolu.', flags: 64 }));
+      }
+
+      const guild = interaction.guild;
+      await guild.members.fetch();
+
+      const activeUsers = [];
+
+      for (const [userId] of patrolTimers.entries()) {
+        const mem = guild.members.cache.get(userId);
+        if (!mem) continue;
+
+        const rank = getUserRank(mem);
+        const rankIndex = getRankIndex(rank);
+
+        activeUsers.push({
+          userId,
+          mention: `<@${userId}>`,
+          rank,
+          rankIndex,
+        });
+      }
+
+      const sergeantIndex = rankRoles.indexOf('⟩⟩⟩│Sergeant I.');
+      const filtered = activeUsers.filter(u => u.rankIndex <= sergeantIndex);
+
+      if (filtered.length === 0) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '📋 Momentálně není aktivní žádný officer se hodností Sergeant I. nebo vyšší.', flags: 64 }));
+      }
+
+      filtered.sort((a, b) => a.rankIndex - b.rankIndex);
+
+      const lines = filtered.map(u => `👮 ${u.mention} | ${u.rank}`);
+
+      const embed = new EmbedBuilder()
+        .setTitle('🟢 Aktuálně aktivní patroly')
+        .setDescription(lines.join('\n'))
+        .setColor(0x2ECC71)
+        .setTimestamp();
+
+      await safeReplyOrUpdate(interaction, () => interaction.reply({ embeds: [embed], flags: 64 }));
+    }
+    else if (interaction.commandName === 'redat') {
+      // MODAL na dostupnost
+      const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+      const modal = new ModalBuilder()
+        .setCustomId('redat_availability_modal')
+        .setTitle('Žádost o REDAT');
+
+      const availabilityInput = new TextInputBuilder()
+        .setCustomId('availability')
+        .setLabel('Dostupnost (např. 3.7 20:00-22:00)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(availabilityInput)
+      );
+
+      await safeShowModal(interaction, modal);
+    }
     return;
   }
 
