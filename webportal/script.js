@@ -49,10 +49,9 @@ function loadTable() {
         tbody.appendChild(tr);
       });
 
-      // Návrhy na povýšení
+      // Nová tabulka návrhů na povýšení
       const promotionTbody = document.querySelector('#promotion-table tbody');
       promotionTbody.innerHTML = '';
-      // Najdi uživatele s aspoň jedním úspěšným REDATem
       const rankOrder = [
         'Police Officer I Zk.doba',
         'Police Officer I',
@@ -69,28 +68,35 @@ function loadTable() {
         '★★★★│Chief of Police'
       ];
       // Map: userId -> {nickname, rank, count}
-      const passedMap = {};
+      const userMap = {};
       Object.values(data).forEach(req => {
+        if (!userMap[req.userId]) {
+          userMap[req.userId] = { nickname: req.nickname, rank: req.rank, count: 0 };
+        }
         if (req.status === 'done' && req.passed) {
-          if (!passedMap[req.userId]) {
-            passedMap[req.userId] = { nickname: req.nickname, rank: req.rank, count: 0 };
-          }
-          passedMap[req.userId].count++;
+          userMap[req.userId].count++;
         }
       });
-      Object.values(passedMap).forEach(user => {
-        // Najdi index současné hodnosti
+      Object.values(userMap).forEach(user => {
         const idx = rankOrder.indexOf(user.rank);
-        if (idx !== -1 && idx < rankOrder.length - 1) {
-          const newRank = rankOrder[idx + 1];
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${user.nickname}</td>
-            <td>${user.rank}</td>
-            <td>${newRank}</td>
-          `;
-          promotionTbody.appendChild(tr);
+        let newRank = '';
+        let eligible = false;
+        if (idx !== -1 && idx < rankOrder.length - 1 && user.count > 0) {
+          newRank = rankOrder[idx + 1];
+          eligible = true;
         }
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${user.nickname}</td>
+          <td>${user.rank}</td>
+          <td style="text-align:center;">${user.count}</td>
+          <td style="text-align:center; font-weight:bold; color:${eligible ? '#21e6c1' : '#e74c3c'};">
+            ${eligible ? 'ANO' : 'NE'}
+          </td>
+          <td>${eligible ? newRank : ''}</td>
+        `;
+        if (eligible) tr.style.background = 'rgba(33,230,193,0.10)';
+        promotionTbody.appendChild(tr);
       });
     });
 }
