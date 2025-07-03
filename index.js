@@ -376,7 +376,7 @@ app.listen(port, () => {
   console.log(`🌐 REDAT portál: http://localhost:${port}/webportal`);
 });
 
-client.login(token);
+
 
 // ==== REDAT SYSTÉM ==== //
 const redatChannelId = '1390070501791236147'; // <-- ZDE nastav ID kanálu pro redat žádosti
