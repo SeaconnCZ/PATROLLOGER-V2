@@ -298,11 +298,18 @@ async function safeReplyOrUpdate(interaction, fn) {
     if (err?.rawError?.code === 10062 || err?.code === 10062 || (err?.message && err.message.includes('Unknown interaction'))) {
       try {
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', ephemeral: true });
+          await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', flags: 64 });
         }
       } catch {}
     } else {
-      console.error('Chyba při zpracování interakce:', err);
+      // Pokud je to update, zkus fallback na reply
+      if (err?.message && err.message.includes('update') && !interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', flags: 64 });
+        } catch {}
+      } else {
+        console.error('Chyba při zpracování interakce:', err);
+      }
     }
   }
 }
@@ -787,14 +794,14 @@ client.on(Events.InteractionCreate, async interaction => {
       lastPing: Date.now()
     });
 
-    await safeReplyOrUpdate(interaction, () => interaction.reply({ content: 'Tvoje žádost o redat byla odeslána!', ephemeral: true }));
+    await safeReplyOrUpdate(interaction, () => interaction.reply({ content: 'Tvoje žádost o redat byla odeslána!', flags: 64 }));
     return;
   }
 
   // --- REDAT BUTTONS ---
   if (interaction.isButton() && interaction.message.embeds?.[0]?.title?.includes('Žádost o REDAT')) {
     const req = redatRequests.get(interaction.message.id);
-    if (!req) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Tato žádost už není aktivní.', ephemeral: true }));
+    if (!req) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Tato žádost už není aktivní.', flags: 64 }));
 
     // CLAIM
     if (interaction.customId === 'redat_claim') {
@@ -877,7 +884,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.customId === 'redat_done') {
       // Jen supervisor co claimnul může dokončit
       if (req.claimedBy !== interaction.user.id) {
-        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Jen supervisor, který claimnul tuto žádost, ji může dokončit.', ephemeral: true }));
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Jen supervisor, který claimnul tuto žádost, ji může dokončit.', flags: 64 }));
       }
       // Modal na hodnocení
       const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
@@ -916,7 +923,7 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'redat_cancel_reason_modal') {
     // Najdi žádost podle messageId (z interaction.message.id není, musíme najít podle _modalUser)
     const reqEntry = [...redatRequests.entries()].find(([_, v]) => v._modalUser === interaction.user.id && v.status !== 'done');
-    if (!reqEntry) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Žádná aktivní žádost ke zrušení.', ephemeral: true }));
+    if (!reqEntry) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Žádná aktivní žádost ke zrušení.', flags: 64 }));
     const [messageId, req] = reqEntry;
 
     const cancelReason = interaction.fields.getTextInputValue('cancel_reason');
@@ -942,7 +949,7 @@ client.on(Events.InteractionCreate, async interaction => {
     // NEMAŽEME záznam, pouze aktualizujeme status a důvod
     redatRequests.set(messageId, req);
     saveRedatRequests();
-    await interaction.reply({ content: 'Žádost byla zrušena a důvod odeslán.', ephemeral: true });
+    await interaction.reply({ content: 'Žádost byla zrušena a důvod odeslán.', flags: 64 });
     return;
   }
 
@@ -950,7 +957,7 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'redat_feedback_modal') {
     // Najdi žádost podle messageId (z interaction.message.id není, musíme najít podle _modalUser)
     const reqEntry = [...redatRequests.entries()].find(([_, v]) => v._modalUser === interaction.user.id && v.status === 'claimed');
-    if (!reqEntry) return interaction.reply({ content: '❗ Žádná aktivní žádost k dokončení.', ephemeral: true });
+    if (!reqEntry) return interaction.reply({ content: '❗ Žádná aktivní žádost k dokončení.', flags: 64 });
     const [messageId, req] = reqEntry;
 
     const feedback = interaction.fields.getTextInputValue('feedback');
@@ -974,7 +981,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const msg = await channel.messages.fetch(req.messageId);
     await msg.edit({ embeds: [embed], components: [] });
 
-    await interaction.reply({ content: 'Hodnocení bylo uloženo a žádost uzavřena.', ephemeral: true });
+    await interaction.reply({ content: 'Hodnocení bylo uloženo a žádost uzavřena.', flags: 64 });
     // NEMAŽEME záznam, pouze aktualizujeme status a hodnocení
     redatRequests.set(messageId, req);
     saveRedatRequests();
