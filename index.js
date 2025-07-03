@@ -363,11 +363,15 @@ const path = require('path');
 
 // (Webportal odstraněn, vše bude řešeno přes Google Sheets)
 
+
 app.get('/', (req, res) => {
   res.send('Bot je online a připraven!');
 });
 
+// Odstraněno: logování odkazu na webportal, protože webportal již neexistuje
+
 const port = process.env.PORT || 3000;
+
 
 app.listen(port, () => {
   console.log(`🌐 Uptime server běží na portu ${port}`);
