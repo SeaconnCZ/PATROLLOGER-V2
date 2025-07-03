@@ -368,9 +368,9 @@ app.get('/', (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
+
 app.listen(port, () => {
   console.log(`🌐 Uptime server běží na portu ${port}`);
-  console.log(`🌐 REDAT portál: http://localhost:${port}/webportal`);
 });
 
 
