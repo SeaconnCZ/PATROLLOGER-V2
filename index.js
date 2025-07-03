@@ -939,7 +939,8 @@ client.on(Events.InteractionCreate, async interaction => {
     } catch (e) {
       // Pokud DM nejde poslat, ignoruj
     }
-    redatRequests.delete(messageId);
+    // NEMAŽEME záznam, pouze aktualizujeme status a důvod
+    redatRequests.set(messageId, req);
     saveRedatRequests();
     await interaction.reply({ content: 'Žádost byla zrušena a důvod odeslán.', ephemeral: true });
     return;
@@ -969,7 +970,8 @@ client.on(Events.InteractionCreate, async interaction => {
     await msg.edit({ embeds: [embed], components: [] });
 
     await interaction.reply({ content: 'Hodnocení bylo uloženo a žádost uzavřena.', ephemeral: true });
-    redatRequests.delete(messageId);
+    // NEMAŽEME záznam, pouze aktualizujeme status a hodnocení
+    redatRequests.set(messageId, req);
     saveRedatRequests();
     return;
   }
