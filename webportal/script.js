@@ -27,6 +27,7 @@ function loadTable() {
   fetch(API_URL)
     .then(r => r.json())
     .then(data => {
+      // Tabulka všech žádostí
       const tbody = document.querySelector('#redat-table tbody');
       tbody.innerHTML = '';
       Object.entries(data).forEach(([id, req]) => {
@@ -46,6 +47,50 @@ function loadTable() {
           </td>
         `;
         tbody.appendChild(tr);
+      });
+
+      // Návrhy na povýšení
+      const promotionTbody = document.querySelector('#promotion-table tbody');
+      promotionTbody.innerHTML = '';
+      // Najdi uživatele s aspoň jedním úspěšným REDATem
+      const rankOrder = [
+        'Police Officer I Zk.doba',
+        'Police Officer I',
+        'Police Officer II',
+        '⟩⟩│Police Officer III',
+        '⋆⟩⟩│Police Officer III+1',
+        '⟩⟩⟩│Sergeant I.',
+        '⟨⟩⟩⟩│Sergeant II.',
+        '❚│Lieutenant',
+        '❚❚│Captain',
+        '★│Commander',
+        '★★│Deputy Chief',
+        '★★★│Assistant of Chief',
+        '★★★★│Chief of Police'
+      ];
+      // Map: userId -> {nickname, rank, count}
+      const passedMap = {};
+      Object.values(data).forEach(req => {
+        if (req.status === 'done' && req.passed) {
+          if (!passedMap[req.userId]) {
+            passedMap[req.userId] = { nickname: req.nickname, rank: req.rank, count: 0 };
+          }
+          passedMap[req.userId].count++;
+        }
+      });
+      Object.values(passedMap).forEach(user => {
+        // Najdi index současné hodnosti
+        const idx = rankOrder.indexOf(user.rank);
+        if (idx !== -1 && idx < rankOrder.length - 1) {
+          const newRank = rankOrder[idx + 1];
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${user.nickname}</td>
+            <td>${user.rank}</td>
+            <td>${newRank}</td>
+          `;
+          promotionTbody.appendChild(tr);
+        }
       });
     });
 }
