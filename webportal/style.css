@@ -1,0 +1,9 @@
+body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 2em; }
+h1 { color: #2c3e50; }
+table { border-collapse: collapse; width: 100%; background: #fff; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+th { background: #3498db; color: #fff; }
+tr:nth-child(even) { background: #f9f9f9; }
+button { padding: 5px 10px; margin: 2px; }
+#login { max-width: 300px; margin: 2em auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 2px 8px #0001; }
+#main { margin-top: 2em; }
