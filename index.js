@@ -290,6 +290,23 @@ setInterval(checkActivePatrols, 30 * 1000); // každých 30 sekund
 // ==== INTERAKCE ==== //
 
 client.on(Events.InteractionCreate, async interaction => {
+  // Ošetření Unknown interaction error (uživatelská zpráva)
+  async function safeReplyOrUpdate(fn) {
+    try {
+      if (interaction.replied || interaction.deferred) return;
+      await fn();
+    } catch (err) {
+      if (err?.rawError?.code === 10062 || err?.code === 10062 || (err?.message && err.message.includes('Unknown interaction'))) {
+        try {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', ephemeral: true });
+          }
+        } catch {}
+      } else {
+        console.error('Chyba při zpracování interakce:', err);
+      }
+    }
+  }
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'patrola') {
       const embed = new EmbedBuilder()
@@ -318,17 +335,17 @@ client.on(Events.InteractionCreate, async interaction => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: false });
+      await safeReplyOrUpdate(() => interaction.reply({ embeds: [embed], components: [buttons], ephemeral: false }));
     }
 
       else if (interaction.commandName === 'souhrn') {
         const member = interaction.member;
         if (!canUseSummary(member)) {
-          return interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', ephemeral: true });
+          return safeReplyOrUpdate(() => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', ephemeral: true }));
         }
 
         if (patrolSummary.size === 0) {
-          return interaction.reply({ content: '📊 Žádná data o patrolách nejsou k dispozici.', ephemeral: true });
+          return safeReplyOrUpdate(() => interaction.reply({ content: '📊 Žádná data o patrolách nejsou k dispozici.', ephemeral: true }));
         }
 
         // Spočítáme celkový čas podle směn
@@ -398,29 +415,29 @@ client.on(Events.InteractionCreate, async interaction => {
           .setFooter({ text: `Nejaktivnější officer: <@${bestUserId}> — ${formatDuration(bestUserDuration)}` })
           .setTimestamp();
 
-        await interaction.reply({ embeds: [embed] });
+        await safeReplyOrUpdate(() => interaction.reply({ embeds: [embed] }));
       }
 
     else if (interaction.commandName === 'clear') {
       const member = interaction.member;
       if (!isChief(member)) {
-        return interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Pouze Chief of Police může čistit data.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Pouze Chief of Police může čistit data.', ephemeral: true }));
       }
 
       patrolSummary.clear();
       saveSummary();
 
-      return interaction.reply({ content: '🗑️ Všechna data o patrolách byla úspěšně vymazána.', ephemeral: true });
+      return safeReplyOrUpdate(() => interaction.reply({ content: '🗑️ Všechna data o patrolách byla úspěšně vymazána.', ephemeral: true }));
     }
 
     else if (interaction.commandName === 'aktivni') {
       const member = interaction.member;
       if (!canUseActiveList(member)) {
-        return interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', ephemeral: true }));
       }
 
       if (patrolTimers.size === 0) {
-        return interaction.reply({ content: '📋 Nikdo momentálně neprobíhá patrolu.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '📋 Nikdo momentálně neprobíhá patrolu.', ephemeral: true }));
       }
 
       const guild = interaction.guild;
@@ -447,7 +464,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const filtered = activeUsers.filter(u => u.rankIndex <= sergeantIndex);
 
       if (filtered.length === 0) {
-        return interaction.reply({ content: '📋 Momentálně není aktivní žádný officer se hodností Sergeant I. nebo vyšší.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '📋 Momentálně není aktivní žádný officer se hodností Sergeant I. nebo vyšší.', ephemeral: true }));
       }
 
       filtered.sort((a, b) => a.rankIndex - b.rankIndex);
@@ -460,7 +477,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setColor(0x2ECC71)
         .setTimestamp();
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await safeReplyOrUpdate(() => interaction.reply({ embeds: [embed], ephemeral: true }));
     }
   }
 
@@ -470,18 +487,18 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (interaction.customId === 'start_patrol') {
       if (patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Patrola už běží.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❗ Patrola už běží.', ephemeral: true }));
       }
 
       patrolTimers.set(userId, { startTime: now, channelId: interaction.channelId, pingSent: false });
       const embed = createStatusEmbed('start', userId, now);
 
-      await interaction.update({ embeds: [embed], components: interaction.message.components });
+      await safeReplyOrUpdate(() => interaction.update({ embeds: [embed], components: interaction.message.components }));
     }
 
     else if (interaction.customId === 'stop_patrol') {
       if (!patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true }));
       }
 
       const { startTime, channelId } = patrolTimers.get(userId);
@@ -496,7 +513,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber);
 
-      await interaction.update({ embeds: [logEmbed], components: [] });
+      await safeReplyOrUpdate(() => interaction.update({ embeds: [logEmbed], components: [] }));
 
       await sendEmbedToChannels(logEmbed, channelId);
     }
@@ -504,12 +521,12 @@ client.on(Events.InteractionCreate, async interaction => {
     // NOVÉ BUTTONY pro pokračování v patrolování
     else if (interaction.customId === 'patrol_continue_yes') {
       if (!patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true }));
       }
 
       const patrolData = patrolTimers.get(userId);
       if (!patrolData.pingSent) {
-        return interaction.reply({ content: '❗ Tento ping již není aktivní.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❗ Tento ping již není aktivní.', ephemeral: true }));
       }
 
       // Resetujeme ping flag a smažeme pingMessageId
@@ -518,12 +535,12 @@ client.on(Events.InteractionCreate, async interaction => {
       patrolData.pingTimestamp = null;
       patrolTimers.set(userId, patrolData);
 
-      await interaction.update({ content: '✅ Patrola pokračuje', embeds: [], components: [] });
+      await safeReplyOrUpdate(() => interaction.update({ content: '✅ Patrola pokračuje', embeds: [], components: [] }));
     }
 
     else if (interaction.customId === 'patrol_continue_no') {
       if (!patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
+        return safeReplyOrUpdate(() => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true }));
       }
 
       const { startTime, channelId } = patrolTimers.get(userId);
@@ -538,7 +555,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber, 'Uživatel odmítl pokračovat v patrolování.');
 
-      await interaction.update({ content: '🛑 Patrola ukončena dle tvého přání.', embeds: [logEmbed], components: [] });
+      await safeReplyOrUpdate(() => interaction.update({ content: '🛑 Patrola ukončena dle tvého přání.', embeds: [logEmbed], components: [] }));
 
       await sendEmbedToChannels(logEmbed, channelId);
     }
