@@ -473,6 +473,86 @@ function createRedatButtons({ claimedBy, status }) {
 
 // ==== INTERAKCE ==== //
 client.on(Events.InteractionCreate, async interaction => {
+  // --- PATROLA BUTTONS ---
+  if (interaction.isButton()) {
+    const userId = interaction.user.id;
+    const now = Date.now();
+
+    if (interaction.customId === 'start_patrol') {
+      if (patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Patrola už běží.', flags: 64 }));
+      }
+
+      patrolTimers.set(userId, { startTime: now, channelId: interaction.channelId, pingSent: false });
+      const embed = createStatusEmbed('start', userId, now);
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ embeds: [embed], components: interaction.message.components }));
+    }
+
+    else if (interaction.customId === 'stop_patrol') {
+      if (!patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', flags: 64 }));
+      }
+
+      const { startTime, channelId } = patrolTimers.get(userId);
+      patrolTimers.delete(userId);
+
+      const guild = interaction.guild;
+      const member = guild.members.cache.get(userId);
+      const rankName = member ? getUserRank(member) : null;
+      const shiftNumber = member ? getUserShift(member) : null;
+
+      addPatrolTime(userId, rankName || 'Bez hodnosti', shiftNumber || 'Neznámá', now - startTime);
+
+      const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber);
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ embeds: [logEmbed], components: [] }));
+
+      await sendEmbedToChannels(logEmbed, channelId);
+    }
+
+    // NOVÉ BUTTONY pro pokračování v patrolování
+    else if (interaction.customId === 'patrol_continue_yes') {
+      if (!patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', flags: 64 }));
+      }
+
+      const patrolData = patrolTimers.get(userId);
+      if (!patrolData.pingSent) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Tento ping již není aktivní.', flags: 64 }));
+      }
+
+      // Resetujeme ping flag a smažeme pingMessageId
+      patrolData.pingSent = false;
+      patrolData.pingMessageId = null;
+      patrolData.pingTimestamp = null;
+      patrolTimers.set(userId, patrolData);
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ content: '✅ Patrola pokračuje', embeds: [], components: [] }));
+    }
+
+    else if (interaction.customId === 'patrol_continue_no') {
+      if (!patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true }));
+      }
+
+      const { startTime, channelId } = patrolTimers.get(userId);
+      patrolTimers.delete(userId);
+
+      const guild = interaction.guild;
+      const member = guild.members.cache.get(userId);
+      const rankName = member ? getUserRank(member) : null;
+      const shiftNumber = member ? getUserShift(member) : null;
+
+      addPatrolTime(userId, rankName || 'Bez hodnosti', shiftNumber || 'Neznámá', now - startTime);
+
+      const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber, 'Uživatel odmítl pokračovat v patrolování.');
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ content: '🛑 Patrola ukončena dle tvého přání.', embeds: [logEmbed], components: [] }));
+
+      await sendEmbedToChannels(logEmbed, channelId);
+    }
+  }
 
   // --- SLASH COMMANDS ---
   if (interaction.isChatInputCommand()) {
