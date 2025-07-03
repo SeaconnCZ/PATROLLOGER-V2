@@ -787,14 +787,14 @@ client.on(Events.InteractionCreate, async interaction => {
       lastPing: Date.now()
     });
 
-    await interaction.reply({ content: 'Tvoje žádost o redat byla odeslána!', ephemeral: true });
+    await safeReplyOrUpdate(interaction, () => interaction.reply({ content: 'Tvoje žádost o redat byla odeslána!', ephemeral: true }));
     return;
   }
 
   // --- REDAT BUTTONS ---
   if (interaction.isButton() && interaction.message.embeds?.[0]?.title?.includes('Žádost o REDAT')) {
     const req = redatRequests.get(interaction.message.id);
-    if (!req) return interaction.reply({ content: '❗ Tato žádost už není aktivní.', ephemeral: true });
+    if (!req) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Tato žádost už není aktivní.', ephemeral: true }));
 
     // CLAIM
     if (interaction.customId === 'redat_claim') {
@@ -877,7 +877,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.customId === 'redat_done') {
       // Jen supervisor co claimnul může dokončit
       if (req.claimedBy !== interaction.user.id) {
-        return interaction.reply({ content: '❗ Jen supervisor, který claimnul tuto žádost, ji může dokončit.', ephemeral: true });
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Jen supervisor, který claimnul tuto žádost, ji může dokončit.', ephemeral: true }));
       }
       // Modal na hodnocení
       const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
@@ -916,7 +916,7 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'redat_cancel_reason_modal') {
     // Najdi žádost podle messageId (z interaction.message.id není, musíme najít podle _modalUser)
     const reqEntry = [...redatRequests.entries()].find(([_, v]) => v._modalUser === interaction.user.id && v.status !== 'done');
-    if (!reqEntry) return interaction.reply({ content: '❗ Žádná aktivní žádost ke zrušení.', ephemeral: true });
+    if (!reqEntry) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Žádná aktivní žádost ke zrušení.', ephemeral: true }));
     const [messageId, req] = reqEntry;
 
     const cancelReason = interaction.fields.getTextInputValue('cancel_reason');
