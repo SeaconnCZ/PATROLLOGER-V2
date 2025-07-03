@@ -289,261 +289,48 @@ setInterval(checkActivePatrols, 30 * 1000); // každých 30 sekund
 
 // ==== INTERAKCE ==== //
 
-client.on(Events.InteractionCreate, async interaction => {
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === 'patrola') {
-      const embed = new EmbedBuilder()
-        .setColor(0x3498DB)
-        .setTitle('🚓 Patrola')
-        .setThumbnail(commandThumbnail)
-        .setDescription([
-          '**Zahaj svoji patrolu kliknutím na tlačítko níže.**',
-          '',
-          '➡️ Klikni na **🟢 Zahájit Patrolu** pro zahájení hlídky.',
-          '⬅️ Klikni na **🔴 Ukončit Patrolu** pro její ukončení.',
-          '',
-          '> 💤 Patrola bude **automaticky ukončena**, pokud tvůj stav na aplikaci bude offline.'
-        ].join('\n'))
-        .setFooter({ text: 'LSPD Patrol System', iconURL: client.user.displayAvatarURL() })
-        .setTimestamp();
-
-      const buttons = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('start_patrol')
-          .setLabel('🟢 Zahájit Patrolu')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('stop_patrol')
-          .setLabel('🔴 Ukončit Patrolu')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: false });
-    }
-
-      else if (interaction.commandName === 'souhrn') {
-        const member = interaction.member;
-        if (!canUseSummary(member)) {
-          return interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', ephemeral: true });
+// --- SAFE INTERACTION HELPERS (globálně dostupné) ---
+async function safeReplyOrUpdate(interaction, fn) {
+  try {
+    if (interaction.replied || interaction.deferred) return;
+    await fn();
+  } catch (err) {
+    if (err?.rawError?.code === 10062 || err?.code === 10062 || (err?.message && err.message.includes('Unknown interaction'))) {
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', flags: 64 });
         }
-
-        if (patrolSummary.size === 0) {
-          return interaction.reply({ content: '📊 Žádná data o patrolách nejsou k dispozici.', ephemeral: true });
-        }
-
-        // Spočítáme celkový čas podle směn
-        const totalByShift = new Map();
-        for (const [shift, users] of patrolSummary.entries()) {
-          let shiftTotal = 0;
-          for (const data of users.values()) {
-            shiftTotal += data.duration;
-          }
-          totalByShift.set(shift, shiftTotal);
-        }
-
-        // Najdeme nejlepší směnu (nejvyšší odsloužený čas)
-        const bestShiftEntry = [...totalByShift.entries()].reduce((a, b) => (a[1] > b[1] ? a : b));
-        const bestShift = bestShiftEntry[0];
-
-        // Najdeme nejlepšího uživatele celkově (napříč směnami)
-        const totalByUser = new Map();
-        for (const users of patrolSummary.values()) {
-          for (const [userId, data] of users.entries()) {
-            totalByUser.set(userId, (totalByUser.get(userId) || 0) + data.duration);
-          }
-        }
-        const bestUserEntry = [...totalByUser.entries()].reduce((a, b) => (a[1] > b[1] ? a : b));
-        const bestUserId = bestUserEntry[0];
-        const bestUserDuration = bestUserEntry[1];
-
-        // Barvy podle směn (můžeš upravit)
-        const shiftColors = {
-          '1': 0x1abc9c, // tyrkysová
-          '2': 0x3498db, // modrá
-          '3': 0x9b59b6, // fialová
-          '4': 0xe67e22, // oranžová
-          '5': 0xe74c3c, // červená
-        };
-
-        const lines = [];
-
-        const sortedShifts = [...patrolSummary.keys()]
-          .sort((a, b) => parseInt(a) - parseInt(b));
-
-        for (const shift of sortedShifts) {
-          const users = patrolSummary.get(shift);
-          const shiftTotalTime = totalByShift.get(shift);
-          const shiftColor = shiftColors[shift] || 0x95a5a6; // šedá pokud neznámá
-
-          // Zvýraznění nejlepší směny
-          const shiftTitle = shift === bestShift ? `🌟 Směna ${shift} (nejaktivnější)` : `Směna ${shift}`;
-
-          lines.push(`\n__**${shiftTitle} — Celkem: ${formatDuration(shiftTotalTime)}**__`);
-
-          const sortedUsers = [...users.entries()]
-            .sort((a, b) => b[1].duration - a[1].duration);
-
-          for (const [userId, data] of sortedUsers) {
-            const timeStr = formatDuration(data.duration);
-            const isBestUser = userId === bestUserId;
-            // Zvýraznění nejlepšího člověka (tučně + emoji)
-            lines.push(`${isBestUser ? '🌟 **' : ''}👮 <@${userId}> | ${data.rank} — ⏱️ ${timeStr}${isBestUser ? '**' : ''}`);
-          }
-        }
-
-        const embed = new EmbedBuilder()
-          .setTitle('📊 Týdenní souhrn')
-          .setDescription(lines.join('\n'))
-          .setColor(0x2ecc71) // zelená základní barva
-          .setFooter({ text: `Nejaktivnější officer: <@${bestUserId}> — ${formatDuration(bestUserDuration)}` })
-          .setTimestamp();
-
-        await interaction.reply({ embeds: [embed] });
+      } catch {}
+    } else {
+      // Pokud je to update, zkus fallback na reply
+      if (err?.message && err.message.includes('update') && !interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', flags: 64 });
+        } catch {}
+      } else {
+        console.error('Chyba při zpracování interakce:', err);
       }
-
-    else if (interaction.commandName === 'clear') {
-      const member = interaction.member;
-      if (!isChief(member)) {
-        return interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Pouze Chief of Police může čistit data.', ephemeral: true });
-      }
-
-      patrolSummary.clear();
-      saveSummary();
-
-      return interaction.reply({ content: '🗑️ Všechna data o patrolách byla úspěšně vymazána.', ephemeral: true });
-    }
-
-    else if (interaction.commandName === 'aktivni') {
-      const member = interaction.member;
-      if (!canUseActiveList(member)) {
-        return interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', ephemeral: true });
-      }
-
-      if (patrolTimers.size === 0) {
-        return interaction.reply({ content: '📋 Nikdo momentálně neprobíhá patrolu.', ephemeral: true });
-      }
-
-      const guild = interaction.guild;
-      await guild.members.fetch();
-
-      const activeUsers = [];
-
-      for (const [userId] of patrolTimers.entries()) {
-        const mem = guild.members.cache.get(userId);
-        if (!mem) continue;
-
-        const rank = getUserRank(mem);
-        const rankIndex = getRankIndex(rank);
-
-        activeUsers.push({
-          userId,
-          mention: `<@${userId}>`,
-          rank,
-          rankIndex,
-        });
-      }
-
-      const sergeantIndex = rankRoles.indexOf('⟩⟩⟩│Sergeant I.');
-      const filtered = activeUsers.filter(u => u.rankIndex <= sergeantIndex);
-
-      if (filtered.length === 0) {
-        return interaction.reply({ content: '📋 Momentálně není aktivní žádný officer se hodností Sergeant I. nebo vyšší.', ephemeral: true });
-      }
-
-      filtered.sort((a, b) => a.rankIndex - b.rankIndex);
-
-      const lines = filtered.map(u => `👮 ${u.mention} | ${u.rank}`);
-
-      const embed = new EmbedBuilder()
-        .setTitle('🟢 Aktuálně aktivní patroly')
-        .setDescription(lines.join('\n'))
-        .setColor(0x2ECC71)
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   }
+}
 
-  else if (interaction.isButton()) {
-    const userId = interaction.user.id;
-    const now = Date.now();
-
-    if (interaction.customId === 'start_patrol') {
-      if (patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Patrola už běží.', ephemeral: true });
-      }
-
-      patrolTimers.set(userId, { startTime: now, channelId: interaction.channelId, pingSent: false });
-      const embed = createStatusEmbed('start', userId, now);
-
-      await interaction.update({ embeds: [embed], components: interaction.message.components });
-    }
-
-    else if (interaction.customId === 'stop_patrol') {
-      if (!patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
-      }
-
-      const { startTime, channelId } = patrolTimers.get(userId);
-      patrolTimers.delete(userId);
-
-      const guild = interaction.guild;
-      const member = guild.members.cache.get(userId);
-      const rankName = member ? getUserRank(member) : null;
-      const shiftNumber = member ? getUserShift(member) : null;
-
-      addPatrolTime(userId, rankName || 'Bez hodnosti', shiftNumber || 'Neznámá', now - startTime);
-
-      const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber);
-
-      await interaction.update({ embeds: [logEmbed], components: [] });
-
-      await sendEmbedToChannels(logEmbed, channelId);
-    }
-
-    // NOVÉ BUTTONY pro pokračování v patrolování
-    else if (interaction.customId === 'patrol_continue_yes') {
-      if (!patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
-      }
-
-      const patrolData = patrolTimers.get(userId);
-      if (!patrolData.pingSent) {
-        return interaction.reply({ content: '❗ Tento ping již není aktivní.', ephemeral: true });
-      }
-
-      // Resetujeme ping flag a smažeme pingMessageId
-      patrolData.pingSent = false;
-      patrolData.pingMessageId = null;
-      patrolData.pingTimestamp = null;
-      patrolTimers.set(userId, patrolData);
-
-      await interaction.update({ content: '✅ Patrola pokračuje', embeds: [], components: [] });
-    }
-
-    else if (interaction.customId === 'patrol_continue_no') {
-      if (!patrolTimers.has(userId)) {
-        return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
-      }
-
-      const { startTime, channelId } = patrolTimers.get(userId);
-      patrolTimers.delete(userId);
-
-      const guild = interaction.guild;
-      const member = guild.members.cache.get(userId);
-      const rankName = member ? getUserRank(member) : null;
-      const shiftNumber = member ? getUserShift(member) : null;
-
-      addPatrolTime(userId, rankName || 'Bez hodnosti', shiftNumber || 'Neznámá', now - startTime);
-
-      const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber, 'Uživatel odmítl pokračovat v patrolování.');
-
-      await interaction.update({ content: '🛑 Patrola ukončena dle tvého přání.', embeds: [logEmbed], components: [] });
-
-      await sendEmbedToChannels(logEmbed, channelId);
+async function safeShowModal(interaction, modal) {
+  try {
+    if (interaction.replied || interaction.deferred) return;
+    await interaction.showModal(modal);
+  } catch (err) {
+    if (err?.rawError?.code === 10062 || err?.code === 10062 || (err?.message && err.message.includes('Unknown interaction'))) {
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: 'Tato interakce už není platná (vypršela nebo byla zpracována). Zkuste to znovu.', ephemeral: true });
+        }
+      } catch {}
+    } else {
+      console.error('Chyba při showModal:', err);
     }
   }
-});
+}
+
 
 // Automatické ukončení patroly při přechodu do offline
 client.on(Events.PresenceUpdate, async (oldPresence, newPresence) => {
@@ -573,11 +360,8 @@ const express = require('express');
 const app = express();
 const path = require('path');
 
-// API router pro webportal
-app.use('/webportal/api', require('./webportal/api'));
 
-// Statické soubory pro webportal
-app.use('/webportal', express.static(path.join(__dirname, 'webportal')));
+// (Webportal odstraněn, vše bude řešeno přes Google Sheets)
 
 app.get('/', (req, res) => {
   res.send('Bot je online a připraven!');
@@ -589,7 +373,7 @@ app.listen(port, () => {
   console.log(`🌐 REDAT portál: http://localhost:${port}/webportal`);
 });
 
-client.login(token);
+
 
 // ==== REDAT SYSTÉM ==== //
 const redatChannelId = '1390070501791236147'; // <-- ZDE nastav ID kanálu pro redat žádosti
@@ -686,25 +470,276 @@ function createRedatButtons({ claimedBy, status }) {
 
 // ==== INTERAKCE ==== //
 client.on(Events.InteractionCreate, async interaction => {
-  // --- REDAT SLASH COMMAND ---
-  if (interaction.isChatInputCommand() && interaction.commandName === 'redat') {
-    // MODAL na dostupnost
-    const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-    const modal = new ModalBuilder()
-      .setCustomId('redat_availability_modal')
-      .setTitle('Žádost o REDAT');
+  // --- PATROLA BUTTONS ---
+  if (interaction.isButton()) {
+    const userId = interaction.user.id;
+    const now = Date.now();
 
-    const availabilityInput = new TextInputBuilder()
-      .setCustomId('availability')
-      .setLabel('Dostupnost (např. 3.7 20:00-22:00)')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+    if (interaction.customId === 'start_patrol') {
+      if (patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Patrola už běží.', flags: 64 }));
+      }
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(availabilityInput)
-    );
+      patrolTimers.set(userId, { startTime: now, channelId: interaction.channelId, pingSent: false });
+      const embed = createStatusEmbed('start', userId, now);
 
-    await interaction.showModal(modal);
+      await safeReplyOrUpdate(interaction, () => interaction.update({ embeds: [embed], components: interaction.message.components }));
+    }
+
+    else if (interaction.customId === 'stop_patrol') {
+      if (!patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', flags: 64 }));
+      }
+
+      const { startTime, channelId } = patrolTimers.get(userId);
+      patrolTimers.delete(userId);
+
+      const guild = interaction.guild;
+      const member = guild.members.cache.get(userId);
+      const rankName = member ? getUserRank(member) : null;
+      const shiftNumber = member ? getUserShift(member) : null;
+
+      addPatrolTime(userId, rankName || 'Bez hodnosti', shiftNumber || 'Neznámá', now - startTime);
+
+      const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber);
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ embeds: [logEmbed], components: [] }));
+
+      await sendEmbedToChannels(logEmbed, channelId);
+    }
+
+    // NOVÉ BUTTONY pro pokračování v patrolování
+    else if (interaction.customId === 'patrol_continue_yes') {
+      if (!patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', flags: 64 }));
+      }
+
+      const patrolData = patrolTimers.get(userId);
+      if (!patrolData.pingSent) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Tento ping již není aktivní.', flags: 64 }));
+      }
+
+      // Resetujeme ping flag a smažeme pingMessageId
+      patrolData.pingSent = false;
+      patrolData.pingMessageId = null;
+      patrolData.pingTimestamp = null;
+      patrolTimers.set(userId, patrolData);
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ content: '✅ Patrola pokračuje', embeds: [], components: [] }));
+    }
+
+    else if (interaction.customId === 'patrol_continue_no') {
+      if (!patrolTimers.has(userId)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true }));
+      }
+
+      const { startTime, channelId } = patrolTimers.get(userId);
+      patrolTimers.delete(userId);
+
+      const guild = interaction.guild;
+      const member = guild.members.cache.get(userId);
+      const rankName = member ? getUserRank(member) : null;
+      const shiftNumber = member ? getUserShift(member) : null;
+
+      addPatrolTime(userId, rankName || 'Bez hodnosti', shiftNumber || 'Neznámá', now - startTime);
+
+      const logEmbed = createLogEmbed(userId, startTime, now, rankName, shiftNumber, 'Uživatel odmítl pokračovat v patrolování.');
+
+      await safeReplyOrUpdate(interaction, () => interaction.update({ content: '🛑 Patrola ukončena dle tvého přání.', embeds: [logEmbed], components: [] }));
+
+      await sendEmbedToChannels(logEmbed, channelId);
+    }
+  }
+
+  // --- SLASH COMMANDS ---
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'patrola') {
+      const embed = new EmbedBuilder()
+        .setColor(0x3498DB)
+        .setTitle('🚓 Patrola')
+        .setThumbnail(commandThumbnail)
+        .setDescription([
+          '**Zahaj svoji patrolu kliknutím na tlačítko níže.**',
+          '',
+          '➡️ Klikni na **🟢 Zahájit Patrolu** pro zahájení hlídky.',
+          '⬅️ Klikni na **🔴 Ukončit Patrolu** pro její ukončení.',
+          '',
+          '> 💤 Patrola bude **automaticky ukončena**, pokud tvůj stav na aplikaci bude offline.'
+        ].join('\n'))
+        .setFooter({ text: 'LSPD Patrol System', iconURL: client.user.displayAvatarURL() })
+        .setTimestamp();
+
+      const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('start_patrol')
+          .setLabel('🟢 Zahájit Patrolu')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('stop_patrol')
+          .setLabel('🔴 Ukončit Patrolu')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await safeReplyOrUpdate(interaction, () => interaction.reply({ embeds: [embed], components: [buttons] }));
+    }
+    else if (interaction.commandName === 'souhrn') {
+      const member = interaction.member;
+      if (!canUseSummary(member)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', flags: 64 }));
+      }
+
+      if (patrolSummary.size === 0) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '📊 Žádná data o patrolách nejsou k dispozici.', flags: 64 }));
+      }
+
+      // Spočítáme celkový čas podle směn
+      const totalByShift = new Map();
+      for (const [shift, users] of patrolSummary.entries()) {
+        let shiftTotal = 0;
+        for (const data of users.values()) {
+          shiftTotal += data.duration;
+        }
+        totalByShift.set(shift, shiftTotal);
+      }
+
+      // Najdeme nejlepší směnu (nejvyšší odsloužený čas)
+      const bestShiftEntry = [...totalByShift.entries()].reduce((a, b) => (a[1] > b[1] ? a : b));
+      const bestShift = bestShiftEntry[0];
+
+      // Najdeme nejlepšího uživatele celkově (napříč směnami)
+      const totalByUser = new Map();
+      for (const users of patrolSummary.values()) {
+        for (const [userId, data] of users.entries()) {
+          totalByUser.set(userId, (totalByUser.get(userId) || 0) + data.duration);
+        }
+      }
+      const bestUserEntry = [...totalByUser.entries()].reduce((a, b) => (a[1] > b[1] ? a : b));
+      const bestUserId = bestUserEntry[0];
+      const bestUserDuration = bestUserEntry[1];
+
+      // Barvy podle směn (můžeš upravit)
+      const shiftColors = {
+        '1': 0x1abc9c, // tyrkysová
+        '2': 0x3498db, // modrá
+        '3': 0x9b59b6, // fialová
+        '4': 0xe67e22, // oranžová
+        '5': 0xe74c3c, // červená
+      };
+
+      const lines = [];
+
+      const sortedShifts = [...patrolSummary.keys()]
+        .sort((a, b) => parseInt(a) - parseInt(b));
+
+      for (const shift of sortedShifts) {
+        const users = patrolSummary.get(shift);
+        const shiftTotalTime = totalByShift.get(shift);
+        const shiftColor = shiftColors[shift] || 0x95a5a6; // šedá pokud neznámá
+
+        // Zvýraznění nejlepší směny
+        const shiftTitle = shift === bestShift ? `🌟 Směna ${shift} (nejaktivnější)` : `Směna ${shift}`;
+
+        lines.push(`\n__**${shiftTitle} — Celkem: ${formatDuration(shiftTotalTime)}**__`);
+
+        const sortedUsers = [...users.entries()]
+          .sort((a, b) => b[1].duration - a[1].duration);
+
+        for (const [userId, data] of sortedUsers) {
+          const timeStr = formatDuration(data.duration);
+          const isBestUser = userId === bestUserId;
+          // Zvýraznění nejlepšího člověka (tučně + emoji)
+          lines.push(`${isBestUser ? '🌟 **' : ''}👮 <@${userId}> | ${data.rank} — ⏱️ ${timeStr}${isBestUser ? '**' : ''}`);
+        }
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('📊 Týdenní souhrn')
+        .setDescription(lines.join('\n'))
+        .setColor(0x2ecc71) // zelená základní barva
+        .setFooter({ text: `Nejaktivnější officer: <@${bestUserId}> — ${formatDuration(bestUserDuration)}` })
+        .setTimestamp();
+
+      await safeReplyOrUpdate(interaction, () => interaction.reply({ embeds: [embed] }));
+    }
+    else if (interaction.commandName === 'clear') {
+      const member = interaction.member;
+      if (!isChief(member)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Pouze Chief of Police může čistit data.', flags: 64 }));
+      }
+
+      patrolSummary.clear();
+      saveSummary();
+
+      return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '🗑️ Všechna data o patrolách byla úspěšně vymazána.', flags: 64 }));
+    }
+    else if (interaction.commandName === 'aktivni') {
+      const member = interaction.member;
+      if (!canUseActiveList(member)) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❌ Nemáš oprávnění použít tento příkaz. Potřebuješ hodnost Sergeant I. nebo vyšší.', flags: 64 }));
+      }
+
+      if (patrolTimers.size === 0) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '📋 Nikdo momentálně neprobíhá patrolu.', flags: 64 }));
+      }
+
+      const guild = interaction.guild;
+      await guild.members.fetch();
+
+      const activeUsers = [];
+
+      for (const [userId] of patrolTimers.entries()) {
+        const mem = guild.members.cache.get(userId);
+        if (!mem) continue;
+
+        const rank = getUserRank(mem);
+        const rankIndex = getRankIndex(rank);
+
+        activeUsers.push({
+          userId,
+          mention: `<@${userId}>`,
+          rank,
+          rankIndex,
+        });
+      }
+
+      const sergeantIndex = rankRoles.indexOf('⟩⟩⟩│Sergeant I.');
+      const filtered = activeUsers.filter(u => u.rankIndex <= sergeantIndex);
+
+      if (filtered.length === 0) {
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '📋 Momentálně není aktivní žádný officer se hodností Sergeant I. nebo vyšší.', flags: 64 }));
+      }
+
+      filtered.sort((a, b) => a.rankIndex - b.rankIndex);
+
+      const lines = filtered.map(u => `👮 ${u.mention} | ${u.rank}`);
+
+      const embed = new EmbedBuilder()
+        .setTitle('🟢 Aktuálně aktivní patroly')
+        .setDescription(lines.join('\n'))
+        .setColor(0x2ECC71)
+        .setTimestamp();
+
+      await safeReplyOrUpdate(interaction, () => interaction.reply({ embeds: [embed], flags: 64 }));
+    }
+    else if (interaction.commandName === 'redat') {
+      // MODAL na dostupnost
+      const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+      const modal = new ModalBuilder()
+        .setCustomId('redat_availability_modal')
+        .setTitle('Žádost o REDAT');
+
+      const availabilityInput = new TextInputBuilder()
+        .setCustomId('availability')
+        .setLabel('Dostupnost (např. 3.7 20:00-22:00)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(availabilityInput)
+      );
+
+      await safeShowModal(interaction, modal);
+    }
     return;
   }
 
@@ -751,14 +786,14 @@ client.on(Events.InteractionCreate, async interaction => {
       lastPing: Date.now()
     });
 
-    await interaction.reply({ content: 'Tvoje žádost o redat byla odeslána!', ephemeral: true });
+    await safeReplyOrUpdate(interaction, () => interaction.reply({ content: 'Tvoje žádost o redat byla odeslána!', flags: 64 }));
     return;
   }
 
   // --- REDAT BUTTONS ---
   if (interaction.isButton() && interaction.message.embeds?.[0]?.title?.includes('Žádost o REDAT')) {
     const req = redatRequests.get(interaction.message.id);
-    if (!req) return interaction.reply({ content: '❗ Tato žádost už není aktivní.', ephemeral: true });
+    if (!req) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Tato žádost už není aktivní.', flags: 64 }));
 
     // CLAIM
     if (interaction.customId === 'redat_claim') {
@@ -828,7 +863,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new ActionRowBuilder().addComponents(reasonInput)
       );
 
-      await interaction.showModal(modal);
+      await safeShowModal(interaction, modal);
 
       // Ulož info o žádosti pro modal
       req._modalUser = interaction.user.id;
@@ -841,7 +876,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.customId === 'redat_done') {
       // Jen supervisor co claimnul může dokončit
       if (req.claimedBy !== interaction.user.id) {
-        return interaction.reply({ content: '❗ Jen supervisor, který claimnul tuto žádost, ji může dokončit.', ephemeral: true });
+        return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Jen supervisor, který claimnul tuto žádost, ji může dokončit.', flags: 64 }));
       }
       // Modal na hodnocení
       const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
@@ -866,7 +901,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new ActionRowBuilder().addComponents(passedInput)
       );
 
-      await interaction.showModal(modal);
+      await safeShowModal(interaction, modal);
 
       // Ulož info o žádosti pro modal
       req._modalUser = interaction.user.id;
@@ -880,7 +915,7 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'redat_cancel_reason_modal') {
     // Najdi žádost podle messageId (z interaction.message.id není, musíme najít podle _modalUser)
     const reqEntry = [...redatRequests.entries()].find(([_, v]) => v._modalUser === interaction.user.id && v.status !== 'done');
-    if (!reqEntry) return interaction.reply({ content: '❗ Žádná aktivní žádost ke zrušení.', ephemeral: true });
+    if (!reqEntry) return safeReplyOrUpdate(interaction, () => interaction.reply({ content: '❗ Žádná aktivní žádost ke zrušení.', flags: 64 }));
     const [messageId, req] = reqEntry;
 
     const cancelReason = interaction.fields.getTextInputValue('cancel_reason');
@@ -903,9 +938,10 @@ client.on(Events.InteractionCreate, async interaction => {
     } catch (e) {
       // Pokud DM nejde poslat, ignoruj
     }
-    redatRequests.delete(messageId);
+    // NEMAŽEME záznam, pouze aktualizujeme status a důvod
+    redatRequests.set(messageId, req);
     saveRedatRequests();
-    await interaction.reply({ content: 'Žádost byla zrušena a důvod odeslán.', ephemeral: true });
+    await interaction.reply({ content: 'Žádost byla zrušena a důvod odeslán.', flags: 64 });
     return;
   }
 
@@ -913,12 +949,17 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'redat_feedback_modal') {
     // Najdi žádost podle messageId (z interaction.message.id není, musíme najít podle _modalUser)
     const reqEntry = [...redatRequests.entries()].find(([_, v]) => v._modalUser === interaction.user.id && v.status === 'claimed');
-    if (!reqEntry) return interaction.reply({ content: '❗ Žádná aktivní žádost k dokončení.', ephemeral: true });
+    if (!reqEntry) return interaction.reply({ content: '❗ Žádná aktivní žádost k dokončení.', flags: 64 });
     const [messageId, req] = reqEntry;
 
     const feedback = interaction.fields.getTextInputValue('feedback');
     const passedRaw = interaction.fields.getTextInputValue('passed');
-    const passed = /^ano$/i.test(passedRaw.trim());
+    // Uzná "ano", "prošel", s diakritikou, tečkou, čárkou, atd.
+    const passed = /^(ano|prosel|prošel)/i.test(
+      passedRaw.trim()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // odstraní diakritiku
+        .replace(/[^a-zA-Z]/g, '') // odstraní speciální znaky
+    );
 
     req.status = 'done';
     req.feedback = feedback;
@@ -932,47 +973,48 @@ client.on(Events.InteractionCreate, async interaction => {
     const msg = await channel.messages.fetch(req.messageId);
     await msg.edit({ embeds: [embed], components: [] });
 
-    await interaction.reply({ content: 'Hodnocení bylo uloženo a žádost uzavřena.', ephemeral: true });
-    redatRequests.delete(messageId);
+    await interaction.reply({ content: 'Hodnocení bylo uloženo a žádost uzavřena.', flags: 64 });
+    // NEMAŽEME záznam, pouze aktualizujeme status a hodnocení
+    redatRequests.set(messageId, req);
     saveRedatRequests();
     return;
   }
+});
 
-  // === PERIODICKÝ PING SUPERVISORŮ NA NECLAIMNUTÉ ŽÁDOSTI ===
-  setInterval(async () => {
-    const supervisorPing = '<@&1390274413265555467>';
-    const now = Date.now();
-    for (const [msgId, req] of redatRequests.entries()) {
-      if (
-        req.status === 'open' &&
-        (!req.lastPing || now - req.lastPing >= 5 * 60 * 60 * 1000)
-      ) {
-        try {
-          // Kontrola existence kanálu a messageId
-          if (!req.channelId || !req.messageId) continue;
-          const channel = await client.channels.fetch(req.channelId).catch(() => null);
-          if (!channel || !channel.isTextBased()) continue;
+// === PERIODICKÝ PING SUPERVISORŮ NA NECLAIMNUTÉ ŽÁDOSTI ===
+setInterval(async () => {
+  const supervisorPing = '<@&1390274413265555467>';
+  const now = Date.now();
+  for (const [msgId, req] of redatRequests.entries()) {
+    if (
+      req.status === 'open' &&
+      (!req.lastPing || now - req.lastPing >= 5 * 60 * 60 * 1000)
+    ) {
+      try {
+        // Kontrola existence kanálu a messageId
+        if (!req.channelId || !req.messageId) continue;
+        const channel = await client.channels.fetch(req.channelId).catch(() => null);
+        if (!channel || !channel.isTextBased()) continue;
 
-          // Ověř, že zpráva stále existuje (nebyla smazána)
-          const msg = await channel.messages.fetch(req.messageId).catch(() => null);
-          if (!msg) {
-            // Pokud zpráva neexistuje, smaž žádost z paměti
-            redatRequests.delete(msgId);
-            continue;
-          }
-
-          await channel.send({
-            content: supervisorPing + ` (čeká na claim žádosti <https://discord.com/channels/${guildId}/${req.channelId}/${req.messageId}>)`
-          });
-          req.lastPing = now;
-          redatRequests.set(msgId, req);
-        } catch (e) {
-          console.error('Chyba při periodickém pingování supervisorů:', e);
+        // Ověř, že zpráva stále existuje (nebyla smazána)
+        const msg = await channel.messages.fetch(req.messageId).catch(() => null);
+        if (!msg) {
+          // Pokud zpráva neexistuje, smaž žádost z paměti
+          redatRequests.delete(msgId);
+          continue;
         }
+
+        await channel.send({
+          content: supervisorPing + ` (čeká na claim žádosti <https://discord.com/channels/${guildId}/${req.channelId}/${req.messageId}>)`
+        });
+        req.lastPing = now;
+        redatRequests.set(msgId, req);
+      } catch (e) {
+        console.error('Chyba při periodickém pingování supervisorů:', e);
       }
     }
-  }, 60 * 1000); // kontrola každou minutu
-});
+  }
+}, 60 * 1000); // kontrola každou minutu
 
 // === REGISTRACE / SLASH COMMANDŮ do Discordu (při startu) ===
 client.once(Events.ClientReady, async () => {
@@ -1012,7 +1054,5 @@ client.once(Events.ClientReady, async () => {
 });
 
 client.login(token);
-client.login(token);
 
-// Vše je nyní správně strukturované, bez duplicit, REDAT systém je pouze jednou a na správném místě
-// Pokud budeš chtít další úpravy nebo rozšíření, stačí napsat!
+
