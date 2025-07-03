@@ -975,6 +975,7 @@ client.on(Events.InteractionCreate, async interaction => {
     saveRedatRequests();
     return;
   }
+});
 
 // === PERIODICKÝ PING SUPERVISORŮ NA NECLAIMNUTÉ ŽÁDOSTI ===
 setInterval(async () => {
@@ -1049,3 +1050,5 @@ client.once(Events.ClientReady, async () => {
 });
 
 client.login(token);
+
+
