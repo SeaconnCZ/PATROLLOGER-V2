@@ -976,41 +976,40 @@ client.on(Events.InteractionCreate, async interaction => {
     return;
   }
 
-  // === PERIODICKÝ PING SUPERVISORŮ NA NECLAIMNUTÉ ŽÁDOSTI ===
-  setInterval(async () => {
-    const supervisorPing = '<@&1390274413265555467>';
-    const now = Date.now();
-    for (const [msgId, req] of redatRequests.entries()) {
-      if (
-        req.status === 'open' &&
-        (!req.lastPing || now - req.lastPing >= 5 * 60 * 60 * 1000)
-      ) {
-        try {
-          // Kontrola existence kanálu a messageId
-          if (!req.channelId || !req.messageId) continue;
-          const channel = await client.channels.fetch(req.channelId).catch(() => null);
-          if (!channel || !channel.isTextBased()) continue;
+// === PERIODICKÝ PING SUPERVISORŮ NA NECLAIMNUTÉ ŽÁDOSTI ===
+setInterval(async () => {
+  const supervisorPing = '<@&1390274413265555467>';
+  const now = Date.now();
+  for (const [msgId, req] of redatRequests.entries()) {
+    if (
+      req.status === 'open' &&
+      (!req.lastPing || now - req.lastPing >= 5 * 60 * 60 * 1000)
+    ) {
+      try {
+        // Kontrola existence kanálu a messageId
+        if (!req.channelId || !req.messageId) continue;
+        const channel = await client.channels.fetch(req.channelId).catch(() => null);
+        if (!channel || !channel.isTextBased()) continue;
 
-          // Ověř, že zpráva stále existuje (nebyla smazána)
-          const msg = await channel.messages.fetch(req.messageId).catch(() => null);
-          if (!msg) {
-            // Pokud zpráva neexistuje, smaž žádost z paměti
-            redatRequests.delete(msgId);
-            continue;
-          }
-
-          await channel.send({
-            content: supervisorPing + ` (čeká na claim žádosti <https://discord.com/channels/${guildId}/${req.channelId}/${req.messageId}>)`
-          });
-          req.lastPing = now;
-          redatRequests.set(msgId, req);
-        } catch (e) {
-          console.error('Chyba při periodickém pingování supervisorů:', e);
+        // Ověř, že zpráva stále existuje (nebyla smazána)
+        const msg = await channel.messages.fetch(req.messageId).catch(() => null);
+        if (!msg) {
+          // Pokud zpráva neexistuje, smaž žádost z paměti
+          redatRequests.delete(msgId);
+          continue;
         }
+
+        await channel.send({
+          content: supervisorPing + ` (čeká na claim žádosti <https://discord.com/channels/${guildId}/${req.channelId}/${req.messageId}>)`
+        });
+        req.lastPing = now;
+        redatRequests.set(msgId, req);
+      } catch (e) {
+        console.error('Chyba při periodickém pingování supervisorů:', e);
       }
     }
-  }, 60 * 1000); // kontrola každou minutu
-});
+  }
+}, 60 * 1000); // kontrola každou minutu
 
 // === REGISTRACE / SLASH COMMANDŮ do Discordu (při startu) ===
 client.once(Events.ClientReady, async () => {
@@ -1050,7 +1049,3 @@ client.once(Events.ClientReady, async () => {
 });
 
 client.login(token);
-client.login(token);
-
-// Vše je nyní správně strukturované, bez duplicit, REDAT systém je pouze jednou a na správném místě
-// Pokud budeš chtít další úpravy nebo rozšíření, stačí napsat!
