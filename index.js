@@ -217,77 +217,72 @@ const commandThumbnail = 'https://iili.io/Hg0h0Ux.png'; // thumbnail pro embed s
       return idx === -1 ? 999 : idx; // Pokud neznámá hodnost, dej na konec
     }
 
-    // ==== NOVÉ PRO PING KONTROLU ==== //
+    // ==== PING KONTROLA ==== //
+const PATROL_CHECK_INTERVAL_MS = 2 * 60 * 1000; // 1 hodina
+const PATROL_RESPONSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minut
 
-    const PATROL_CHECK_INTERVAL_MS = 1 * 60 * 1000; // 1 hodina
-    const PATROL_RESPONSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minut
+function createContinueCheckEmbed(userId) {
+  return new EmbedBuilder()
+    .setColor(0xF1C40F)
+    .setTitle('⏳ Kontrola neaktivity')
+    .setDescription(`<@${userId}>, patrola běží už 1 hodinu. Chceš pokračovat?`)
+    .setTimestamp();
+}
 
-    function createContinueCheckEmbed(userId) {
-      return new EmbedBuilder()
-        .setColor(0xF1C40F)
-        .setTitle('⏳ Kontrola neaktivity')
-        .setDescription(`<@${userId}>, patrola běží už 1 hodinu. Chceš pokračovat?`)
-        .setTimestamp();
-    }
+function createContinueButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('patrol_continue_yes')
+      .setLabel('Ano')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('patrol_continue_no')
+      .setLabel('Ne')
+      .setStyle(ButtonStyle.Danger),
+  );
+}
 
-    function createContinueButtons() {
-      return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('patrol_continue_yes')
-          .setLabel('Ano')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('patrol_continue_no')
-          .setLabel('Ne')
-          .setStyle(ButtonStyle.Danger),
-      );
-    }
+// ✅ OPRAVENÁ LOGIKA – pouze každou hodinu
+async function checkActivePatrols() {
+  const now = Date.now();
 
-    async function checkActivePatrols() {
-      const now = Date.now();
+  for (const [userId, patrolData] of patrolTimers.entries()) {
+    if (now < patrolData.nextCheckTime) continue;
 
-      for (const [userId, patrolData] of patrolTimers.entries()) {
-        const elapsed = now - patrolData.startTime;
+    try {
+      const channel = await client.channels.fetch(patrolData.channelId);
+      if (!channel?.isTextBased()) continue;
 
-        if (!patrolData.pingSent && elapsed >= PATROL_CHECK_INTERVAL_MS) {
-          try {
-            const channel = await client.channels.fetch(patrolData.channelId);
-            if (!channel.isTextBased()) continue;
+      const message = await channel.send({
+        content: `<@${userId}>`,
+        embeds: [createContinueCheckEmbed(userId)],
+        components: [createContinueButtons()],
+      });
 
-            const embed = createContinueCheckEmbed(userId);
-            const buttons = createContinueButtons();
+      patrolData.pingMessageId = message.id;
+      patrolData.pingTimestamp = now;
+      patrolData.nextCheckTime = now + PATROL_CHECK_INTERVAL_MS;
 
-            const message = await channel.send({ content: `<@${userId}>`, embeds: [embed], components: [buttons] });
+      patrolTimers.set(userId, patrolData);
 
-            patrolData.pingSent = true;
-            patrolData.pingMessageId = message.id;
-            patrolData.pingTimestamp = now;
-            patrolTimers.set(userId, patrolData);
-            saveSummary();
-
-            // Timeout pro odpověď
-            setTimeout(async () => {
-              const updatedData = patrolTimers.get(userId);
-              if (updatedData && updatedData.pingSent && updatedData.pingMessageId === message.id) {
-                // Ukončíme patrolu kvůli neodpovězení
-                patrolTimers.delete(userId);
-                saveSummary();
-
-                await channel.send(`<@${userId}> Patrola byla automaticky ukončena, protože jsi neodpověděl na kontrolu pokračování.`);
-                // TODO: můžeš přidat logování ukončení, pokud chceš
-              }
-            }, PATROL_RESPONSE_TIMEOUT_MS);
-
-          } catch (error) {
-            console.error('Chyba při odesílání pingu:', error);
-          }
+      setTimeout(async () => {
+        const updated = patrolTimers.get(userId);
+        if (updated && updated.pingMessageId === message.id) {
+          patrolTimers.delete(userId);
+          await channel.send(
+            `<@${userId}> Patrola byla automaticky ukončena, protože jsi neodpověděl na kontrolu pokračování.`
+          );
         }
-      }
+      }, PATROL_RESPONSE_TIMEOUT_MS);
+
+    } catch (err) {
+      console.error('Chyba při pingu:', err);
     }
+  }
+}
 
-    // --- Spuštění intervalové kontroly ---
-    setInterval(checkActivePatrols, 30 * 1000); // každých 30 sekund
-
+// tick může zůstat klidně po 30s
+setInterval(checkActivePatrols, 30 * 1000);
     // ==== INTERAKCE ==== //
 
     client.on(Events.InteractionCreate, async interaction => {
