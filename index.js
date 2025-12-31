@@ -28,9 +28,9 @@ const client = new Client({
 // ==== KONFIG ==== //
 const token = process.env.token;
 const clientId = process.env.id;
-const guildId = '1255139201570050069';
+const guildId = '1163922563278307338';
 
-const patrolLogChannelId = '1389305663775309844';
+const patrolLogChannelId = '1182806618757406760';
 const patrolLogThumbnail = 'https://static.wikia.nocookie.net/gtawiki/images/a/ad/LSPD-GTAV-Logo.png/revision/latest?cb=20150425201508';
 const startThumbnail = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Eo_circle_green_checkmark.svg/800px-Eo_circle_green_checkmark.svg.png';
 const stopThumbnail = 'https://cdn-icons-png.flaticon.com/512/668/668087.png';
