@@ -219,7 +219,7 @@ const commandThumbnail = 'https://iili.io/Hg0h0Ux.png'; // thumbnail pro embed s
 
     // ==== NOVÉ PRO PING KONTROLU ==== //
 
-    const PATROL_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hodina
+    const PATROL_CHECK_INTERVAL_MS = 1 * 60 * 1000; // 1 hodina
     const PATROL_RESPONSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minut
 
     function createContinueCheckEmbed(userId) {
