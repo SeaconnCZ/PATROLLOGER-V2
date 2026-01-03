@@ -1,4 +1,4 @@
-    const {
+  const {
       Client,
       GatewayIntentBits,
       Partials,
@@ -411,7 +411,7 @@ const commandThumbnail = 'https://iili.io/Hg0h0Ux.png'; // thumbnail pro embed s
 
         else if (interaction.customId === 'stop_patrol') {
           if (!patrolTimers.has(userId)) {
-            return safeReply(interaction, {   content: '❗ Nemáš aktivní patrolu.',   ephemeral: true, });
+            return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
           }
 
           const { startTime, channelId } = patrolTimers.get(userId);
@@ -434,7 +434,7 @@ const commandThumbnail = 'https://iili.io/Hg0h0Ux.png'; // thumbnail pro embed s
         // NOVÉ BUTTONY pro pokračování v patrolování
         else if (interaction.customId === 'patrol_continue_yes') {
           if (!patrolTimers.has(userId)) {
-            return safeReply(interaction, {   content: '❗ Nemáš aktivní patrolu.',   ephemeral: true, });
+            return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
           }
 
           const patrolData = patrolTimers.get(userId);
@@ -453,7 +453,7 @@ const commandThumbnail = 'https://iili.io/Hg0h0Ux.png'; // thumbnail pro embed s
 
         else if (interaction.customId === 'patrol_continue_no') {
           if (!patrolTimers.has(userId)) {
-            return safeReply(interaction, {   content: '❗ Nemáš aktivní patrolu.',   ephemeral: true, });
+            return interaction.reply({ content: '❗ Nemáš aktivní patrolu.', ephemeral: true });
           }
 
           const { startTime, channelId } = patrolTimers.get(userId);
@@ -508,34 +508,6 @@ app.get('/', (req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`🌐 Uptime server běží na portu ${port}`);
-});
-
-// Safe reply
-async function safeReply(interaction, options) {
-  try {
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply(options);
-    }
-  } catch (e) {
-    if (e.code !== 10062) console.error(e);
-  }
-}
-
-async function safeUpdate(interaction, options) {
-  try {
-    await interaction.update(options);
-  } catch (e) {
-    if (e.code !== 10062) console.error(e);
-  }
-}
-// Kill switch
-process.on('unhandledRejection', err => {
-  if (err?.code === 10062) return;
-  console.error('Unhandled Rejection:', err);
-});
-
-process.on('uncaughtException', err => {
-  console.error('Uncaught Exception:', err);
 });
 
     client.login(token);
